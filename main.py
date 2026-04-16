@@ -1,6 +1,7 @@
 import torch
 import cv2
 # Import your future SENSE modules here
+from src.vision_probe import VisionProbe
 # from src.vision_engine import VisionVerify
 # from src.symbolic_logic import LogicAudit
 
