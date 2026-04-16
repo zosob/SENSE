@@ -1,0 +1,26 @@
+# Python environment artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.env
+
+# Conda/Env specific
+vision_lab/
+
+# Large CV Data (CRITICAL)
+data/
+datasets/
+*.mp4
+*.jpg
+*.png
+
+# Model Weights
+*.pt
+*.pth
+*.weights
+*.onnx
+
+# IDEs
+.vscode/
+.idea/
