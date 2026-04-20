@@ -21,8 +21,8 @@ def main():
     gate = LogicGate(threshold=0.75) # Set your "Truth Bar"
     
     # Simulate a "Claim" from an LLM
-    llm_claim = ["a high-performance laptop", "a person", "a plane"]
-    image_to_verify = "data/test_ground_truth.jpg"
+    llm_claim = ["a high-performance laptop", "a person", "a plane", "a ball", "a plant", "a card"]
+    image_to_verify = "data/test_ground_truth1.jpg"
     
     print(f"SENSE is verifying claim: {llm_claim} against {image_to_verify}")
     
