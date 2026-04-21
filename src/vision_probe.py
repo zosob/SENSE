@@ -1,33 +1,50 @@
 import torch
-from PIL import Image
-from transformers import pipeline
+from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
 
 class VisionProbe:
     def __init__(self):
-        print("Initializing Blackwell-Optimized Vision Probe...")
-        # device=0 ensures we use the RTX 5070
-        self.detector = pipeline(
-            model="google/owlvit-base-patch32", 
-            task="zero-shot-object-detection", 
-            device=0
-        )
+        # Using a more robust model checkpoint
+        self.model_id = "IDEA-Research/grounding-dino-tiny" 
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.processor = AutoProcessor.from_pretrained(self.model_id)
+        self.model = AutoModelForZeroShotObjectDetection.from_pretrained(self.model_id).to(self.device)
 
-    def probe_image(self, image_path, candidate_labels):
+    def probe_batch(self, image_paths, text_queries):
         """
-        Analyzes an image for specific claims/labels.
+        Processes multiple images at once to saturate the Blackwell GPU.
         """
-        image = Image.open(image_path)
+        from PIL import Image
+        images = [Image.open(path).convert("RGB") for path in image_paths]
         
-        # Performance check
-        with torch.amp.autocast('cuda'): # Using mixed precision for 50-series speed
-            predictions = self.detector(
-                image,
-                candidate_labels=candidate_labels,
-            )
-        return predictions
+        # Grounding DINO handles text as a single string separated by dots
+        query = ". ".join(text_queries) + "."
+        
+        inputs = self.processor(images=images, text=[query]*len(images), return_tensors="pt").to(self.device)
+        
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+        
+        # Inside your probe_batch function after getting 'outputs'
+        results = []
+        target_sizes = torch.tensor([img.size[::-1] for img in images])
+        processed_results = self.processor.post_process_grounded_object_detection(
+            outputs,
+            inputs.input_ids,
+            threshold=0.25, # Neural sensitivity
+            text_threshold=0.25,
+            target_sizes=target_sizes
+        )[0] # Taking the first image result for now
 
-if __name__ == "__main__":
-    # Quick test case
-    # probe = VisionProbe()
-    # print(probe.probe_image("test.jpg", ["laptop", "coffee cup"]))
-    pass
+        for score, label, box in zip(processed_results["scores"], processed_results["labels"], processed_results["boxes"]):
+            results.append({
+                "label": label,
+                "score": score.item(),
+                "box": {
+                    "ymin": box[1].item(),
+                    "xmin": box[0].item(),
+                    "ymax": box[3].item(),
+                    "xmax": box[2].item()
+                }
+            })
+
+        return results # Now this is a list of dictionaries!
