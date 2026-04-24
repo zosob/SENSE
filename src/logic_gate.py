@@ -2,6 +2,12 @@ class LogicGate:
     def __init__(self, threshold=0.70):
         self.threshold = threshold
 
+    # Add this to your LogicGate class
+    CONSTRAINTS = {
+        "mouse": {"requires": "desk", "relation": "on"},
+        "laptop": {"requires": "desk", "relation": "on"},
+        "plant": {"requires": ["desk", "shelf", "table"], "relation": "on"}
+    }
     def audit(self, claims, detections):
         report = []
         # Create a dictionary of verified objects for easy lookup
@@ -28,17 +34,34 @@ class LogicGate:
                     report.append({"claim": claim, "status": "VERIFIED", "score": verified_objs[claim]['score']})
                 else:
                     report.append({"claim": claim, "status": "HALLUCINATION", "reason": "Object not found above threshold"})
-                    
+        self.verify_dependencies(report, verified_objs)            
         return report
     
-    def check_support(self, object_box, surface_box):
-        """
-        Returns True if the object is physically 'on top of' the surface.
-        """
-        obj_ymin, obj_xmin, obj_ymax, obj_xmax = object_box.values()
-        sur_ymin, sur_xmin, sur_ymax, sur_xmax = surface_box.values()
+    def check_support(self, obj_box, surface_box):
+        # Add a small vertical buffer (0.1) so the plant doesn't 
+        # have to perfectly touch the desk pixel-to-pixel.
+        buffer = (surface_box['ymax'] - surface_box['ymin']) * 0.1
         
-        # Simple Logic: Is the bottom of the object near the top of the surface?
-        if obj_ymax >= sur_ymin and obj_xmin >= sur_xmin and obj_xmax <= sur_xmax:
-            return True
-        return False
+        is_above = obj_box['ymax'] >= (surface_box['ymin'] - buffer)
+        is_within_width = (obj_box['xmin'] >= surface_box['xmin'] and 
+                        obj_box['xmax'] <= surface_box['xmax'])
+        
+        return is_above and is_within_width
+    
+    def verify_dependencies(self, report, verified_objs):
+        for item in report:
+            claim = item['claim']
+            if claim in self.CONSTRAINTS:
+                requirement = self.CONSTRAINTS[claim]['requires']
+                
+                # Check if the requirement (e.g., 'desk') is in our verified list
+                if isinstance(requirement, list):
+                    has_requirement = any(r in verified_objs for r in requirement)
+                else:
+                    has_requirement = requirement in verified_objs
+                    
+                if not has_requirement:
+                    item['status'] = "LOGICAL_ERROR"
+                    item['reason'] = f"Missing dependency: {requirement}"
+                    
+        return report
