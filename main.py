@@ -5,12 +5,14 @@ from src.vision_probe import VisionProbe
 from src.logic_gate import LogicGate
 import time
 from src.visualizer import Visualizer
+from src.temporal_tracker import TemporalTracker
 # from src.vision_engine import VisionVerify
 # from src.symbolic_logic import LogicAudit
 
 def main():
-    start_time = time.time()
+    
     print("--- SENSE Engine Initializing ---")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Device: {torch.cuda.get_device_name(0)}")
     
     # 1. Receive LLM Claim (Symbolic Input)
@@ -19,30 +21,52 @@ def main():
     
     print("System Ready.")
 
-    # Initialize the "Eyes"
+    # 1. Initialize the "Eyes"... the three pillars
     probe = VisionProbe()
     gate = LogicGate(threshold=0.3) # Set your "Truth Bar"
-    
-    # Simulate a "Claim" from an LLM
+    tracker = TemporalTracker(patience=5) #holds objects in memory for 5 frames
+    viz = Visualizer()
+
+    # Defining the "Claim" from an LLM
     llm_claim = ["laptop", "person", "red vase", "picture", "ball", "tree", "card", "plant on vase", "vase on desk", "mouse", "book", "desk"]
     image_to_verify = "data/test_ground_truth1.jpg"
     
-    print(f"SENSE is verifying claim: {llm_claim} against {image_to_verify}")
-    
-    results = probe.probe_batch([image_to_verify], llm_claim)
-    final_report = gate.audit(llm_claim, results)
-    
-    for res in results:
-        print(f"Detected: {res['label']} with {res['score']:.2f} confidence at {res['box']}")
+    video_source = "data/test_video.mp4" # Or use 0 for webcam
+    cap = cv2.VideoCapture(video_source)
 
-    print("\n--- SENSE Audit Report ---")
-    for item in final_report:
-        print(f"[{item['status']}] Claim: {item['claim']}")
+    while cap.isOpened():
+        start_time = time.time()
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        print(f"SENSE is verifying claim: {llm_claim} against {image_to_verify}")
+        
+        results = probe.probe_batch([frame], llm_claim)
+        
+        # Temporal Step
+        tracker.update(results)
+        buffered_results = tracker.get_buffered_detections(results)
+        
+        # Symbolic Step
+        final_report = gate.audit(llm_claim, buffered_results)
+        
+        # Visual Step
+        viz.draw_results(frame, buffered_results, final_report, is_video = True)
+        
+        # Display FPS    
+        end_time = time.time()
+        fps = 1 / (end_time - start_time)
+        cv2.putText(frame, f"SENSE FPS: {fps:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        cv2.imshow("SENSE Temporal Audit", frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
     
-    viz = Visualizer()
-    viz.draw_results(image_to_verify, results, final_report)    
-    end_time = time.time()
-    print(f"SENSE Inference Speed: {1 / (end_time - start_time):.2f} FPS")
+    cap.release()
+    cv2.destroyAllWindows()
+    print("Audit Complete.")
+
+    print(f"SENSE Inference Speed: {fps} FPS")
 
 if __name__ == "__main__":
     main()
